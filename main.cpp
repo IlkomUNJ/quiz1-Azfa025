@@ -1,16 +1,33 @@
 #include <iostream>
 #include "bank_customer.h"
 #include "buyer.h"
+#include "seller.h"
+#include "buyer_menu.h"
+#include "seller_menu.h"
+#include <memory>
 #include <vector>
 #include <string>
+
+
 
 enum PrimaryPrompt{LOGIN, REGISTER, EXIT, ADMIN_LOGIN};
 enum RegisterPrompt{CREATE_BUYER, CREATE_SELLER, BACK};
 using namespace std;
 
-Buyer createBuyer(BankCustomer &account);
-BankCustomer createBankCustomer(int id, string name, double balance);
-bool verifyBankAccount(string name);
+// Find buyer by name and email for login
+Buyer* findBuyer(const string &name, const string &email, std::vector<Buyer> &buyers) {
+    for (auto &buyer : buyers) {
+        if (buyer.getName() == name && buyer.getEmail() == email) {
+            return &buyer;
+        }
+    }
+    return nullptr;
+}
+
+Buyer createBuyer(BankCustomer *account);
+BankCustomer* createBankCustomer(int id, string name, double balance, std::vector<std::unique_ptr<BankCustomer>> &store);
+BankCustomer* verifyBankAccount(const string &name, const std::vector<std::unique_ptr<BankCustomer>> &store);
+Buyer* findBuyer(const string &name, const string &email, std::vector<Buyer> &buyers);
 
 int main() {
     //create a loop prompt 
@@ -19,6 +36,16 @@ int main() {
     const string ADMIN_USERNAME = "root";
     const string ADMIN_PASSWORD = "toor";
     string username, password;
+
+    // Login state
+    UserRole currentRole = UserRole::NONE;
+    Buyer* loggedInBuyer = nullptr;
+    seller* loggedInSeller = nullptr;
+
+    // storage to own created accounts and buyers so pointers/references remain valid
+    std::vector<std::unique_ptr<BankCustomer>> bankAccounts;
+    std::vector<Buyer> buyers;
+    int bankAccountID = 0;
     
 
     while (prompt != EXIT) {
@@ -31,24 +58,67 @@ int main() {
         cin >> choice;
         prompt = static_cast<PrimaryPrompt>(choice - 1);
         switch (prompt) {
-            case LOGIN:
+            case LOGIN: {
+                string email;
+                Buyer* buyer = nullptr;
+                if (currentRole != UserRole::NONE) {
+                    cout << "Already logged in. Please logout first." << endl;
+                    break;
+                }
                 cout << "Login selected." << endl;
+                cout << "Enter your name: ";
+                cin.ignore();
+                getline(cin, username);
+                cout << "Enter your email: ";
+                getline(cin, email);
+                buyer = findBuyer(username, email, buyers);
+                if (buyer) {
+                    loggedInBuyer = buyer;
+                    currentRole = UserRole::BUYER;
+                    // Check if this buyer is also a seller
+                    seller* foundSeller = nullptr;
+                    for (auto &sptr : g_sellers) {
+                        if (sptr && sptr->getBuyer().getEmail() == buyer->getEmail()) {
+                            foundSeller = sptr.get();
+                            break;
+                        }
+                    }
+                    if (foundSeller) {
+                        loggedInSeller = foundSeller;
+                        currentRole = UserRole::SELLER;
+                        cout << "Welcome, Seller! You have access to both seller and buyer features." << endl;
+                        bool stay = true;
+                        while (stay) {
+                            cout << "\nChoose mode:\n1. Seller Menu\n2. Buyer Menu\n3. Logout" << endl;
+                            int modeChoice; cin >> modeChoice;
+                            if (modeChoice == 1) {
+                                handleSellerMenu(loggedInSeller);
+                            } else if (modeChoice == 2) {
+                                handleBuyerMenu(loggedInBuyer, currentRole);
+                            } else if (modeChoice == 3) {
+                                stay = false;
+                                loggedInSeller = nullptr;
+                                loggedInBuyer = nullptr;
+                                currentRole = UserRole::NONE;
+                            } else {
+                                cout << "Invalid choice." << endl;
+                            }
+                        }
+                    } else {
+                        cout << "Welcome, Buyer!" << endl;
+                        handleBuyerMenu(loggedInBuyer, currentRole);
+                        loggedInBuyer = nullptr;
+                        currentRole = UserRole::NONE;
+                    }
+                } else {
+                    cout << "Buyer not found. Please register first." << endl;
+                }
+                break;
+            }
                 /* if Login is selected, based on authority then provide options:
                 assume user is logged in as Buyer for now
-                1. Chek Account Status (will display if user is Buyer or Seller or both and linked banking account status)
-                Will display Buyer, Seller and Banking Account details
-                2. Upgrade Account to Seller
-                Will prompt user to enter Seller details and create a Seller account linked to Buyer account
-                Will reject if a user dont have a banking account linked
-                3. Create Banking Account (if not already linked), will be replaced with banking functions
-                Must provides: initial deposit amount, Address, Phone number, Email
-                Banking functions will provides: Balance checking, Transaction History, Deposit, Withdraw
-                4. Browse Store Functionality
-                Will display all stores initially
-                Need to select a store to browse each store inventory
-                Will display all items in the store inventory
-                After selecting an item, will display item details and option to add to cart
-                After adding to cart, will notify user item is added to cart
+
+
                 5. Order Functionality
                 Will display all items in cart
                 Will provide option to remove item from cart
@@ -85,7 +155,7 @@ int main() {
                 10. Exit Program
                 **/
                 break;
-            case REGISTER:
+            case REGISTER: {
                 regPrompt = CREATE_BUYER; // reset regPrompt to CREATE_BUYER when entering register menu
                 while (regPrompt != BACK){
                     cout << "Register selected. " << endl;
@@ -99,7 +169,6 @@ int main() {
                     switch (regPrompt) {
 
                         case CREATE_BUYER: {
-                            int bankAccountID = 0;
                             cout << "Create Buyer Account selected." << endl;
                             cout << "Punya akun bank? (y/n): ";
                             char hasBankAccount;
@@ -118,10 +187,16 @@ int main() {
                                 cin.ignore(); // to clear the newline character from the buffer
                                 bankAccountID++;
 
-                                BankCustomer newBankAccount = createBankCustomer(bankAccountID, username, initialDeposit);
+                                BankCustomer* newBankAccount = createBankCustomer(bankAccountID, username, initialDeposit, bankAccounts);
                                 cout << "\nBank Account created successfully.\n" << endl;
                                 cout << "Creating Buyer Account now." << endl;
-                                createBuyer(newBankAccount);
+                                Buyer newBuyer = createBuyer(newBankAccount);
+                                buyers.push_back(std::move(newBuyer));
+                                // Auto-login after creation
+                                loggedInBuyer = &buyers.back();
+                                currentRole = UserRole::BUYER;
+                                cout << "Buyer account created and logged in successfully!" << endl;
+                                handleBuyerMenu(loggedInBuyer, currentRole);
                                 
                             }
 
@@ -130,14 +205,106 @@ int main() {
                                 cout << "Verifying Bank Account." << endl;
                                 cout << "Enter Name for Bank Account: ";
                                 getline(cin, username);
-                                cout << verifyBankAccount(username) << endl;
+                                BankCustomer* existingAccount = verifyBankAccount(username, bankAccounts);
+                                if (existingAccount) {
+                                    cout << "Bank account found. Account details:" << endl;
+                                    existingAccount->printInfo();
+                                    cout << "\nCreating Buyer Account now." << endl;
+                                    Buyer newBuyer = createBuyer(existingAccount);
+                                    buyers.push_back(std::move(newBuyer));
+                                                    cout << "Buyer account created successfully." << endl;
+                                    // Auto-login after creation
+                                    loggedInBuyer = &buyers.back();
+                                    currentRole = UserRole::BUYER;
+                                    cout << "Logged in as " << loggedInBuyer->getName() << endl;
+                                    handleBuyerMenu(loggedInBuyer, currentRole);
+                                } else {
+                                    cout << "Bank account NOT found. Please create a new bank account first." << endl;
+                                }
                             }
                             break;
                         }
 
-                        case CREATE_SELLER:
+                        case CREATE_SELLER: {
                             cout << "Create Seller Account selected." << endl;
+                            cout << "Enter your buyer account details to continue..." << endl;
+                            cout << "Enter your name: ";
+                            cin.ignore();
+                            getline(cin, username);
+                            cout << "Enter your email: ";
+                            string email;
+                            getline(cin, email);
+
+                            Buyer* existingBuyer = findBuyer(username, email, buyers);
+                            if (!existingBuyer) {
+                                cout << "\nBuyer account not found! You need to create a buyer account first." << endl;
+                                cout << "Do you want to create a buyer account now? (y/n): ";
+                                char choice;
+                                cin >> choice;
+                                if (choice == 'y' || choice == 'Y') {
+                                    regPrompt = CREATE_BUYER;
+                                }
+                                break;
+                            }
+
+                            if (!existingBuyer->getAccount()) {
+                                cout << "\nError: Your buyer account needs to have a bank account linked first!" << endl;
+                                break;
+                            }
+
+                            // Collect seller information
+                            string sellerName, storeName, storeAddress, storePhone, storeEmail;
+                            double initialDeposit;
+                            static int sellerIdCounter = 0;
+
+                            cout << "\nEnter Seller Details:" << endl;
+                            cout << "Enter Seller Name: ";
+                            getline(cin, sellerName);
+                            cout << "Enter Store Name: ";
+                            getline(cin, storeName);
+                            cout << "Enter Store Address: ";
+                            getline(cin, storeAddress);
+                            cout << "Enter Store Phone: ";
+                            getline(cin, storePhone);
+                            cout << "Enter Store Email: ";
+                            getline(cin, storeEmail);
+                            cout << "Enter Initial Store Balance: $";
+                            cin >> initialDeposit;
+                            cin.ignore();
+
+                            if (initialDeposit <= 0) {
+                                cout << "Error: Initial deposit must be positive!" << endl;
+                                break;
+                            }
+
+                            // Withdraw initial deposit from buyer's bank account
+                            if (!existingBuyer->getAccount()->withdrawBalance(initialDeposit)) {
+                                cout << "Error: Insufficient funds in your bank account!" << endl;
+                                break;
+                            }
+
+                            // Create seller account
+                            sellerIdCounter++;
+                            Buyer buyerCopy(*existingBuyer); // Create a copy of the buyer
+                            seller* newSeller = new seller(
+                                buyerCopy,
+                                sellerIdCounter,
+                                sellerName,
+                                storeName,
+                                storeAddress,
+                                storePhone,
+                                storeEmail,
+                                initialDeposit
+                            );
+
+                            // Auto-login as seller
+                            loggedInSeller = newSeller;
+                            currentRole = UserRole::SELLER;
+                            cout << "\nSeller account created successfully!" << endl;
+                            cout << "Logged in as seller." << endl;
+                            newSeller->printStoreInfo();
                             break;
+                        }
                         case BACK:
                             cout << "Back selected." << endl;
                             break;
@@ -146,15 +313,6 @@ int main() {
                             break;
                     }
                 }
-                /* if register is selected then went throuhh registration process:
-                1. Create a new Buyer Account
-                Must provides: Name, Home Address, Phone number, Email
-                2. Option to create a Seller Account (will be linked to Buyer account)
-                Must Provides 1: Home Address, Phone number, Email
-                Must provides 2: Store Name, Store Address, Store Phone number, Store Email
-                Must provides 3: initial deposit amount
-                After finished immediately logged in as Buyer/Seller
-                */
                 break;
             case EXIT:
                 cout << "Exiting." << endl;
@@ -185,11 +343,13 @@ int main() {
     }
     return 1;
 }
+}
 
-Buyer createBuyer(BankCustomer &account)
+
+Buyer createBuyer(BankCustomer *account)
 {
     string username, password, address, phoneNumber, email;
-    int buyerIdCounter = 0;
+    static int buyerIdCounter = 0;
 
     cout << "Enter Name: ";
     getline(cin, username);
@@ -200,17 +360,22 @@ Buyer createBuyer(BankCustomer &account)
     cout << "Enter Email: ";
     getline(cin, email);
     buyerIdCounter++;
-    Buyer* createBuyer = new Buyer(buyerIdCounter, username, address, phoneNumber, email, account);
-    return (*createBuyer);
+    Buyer newBuyer(buyerIdCounter, username, address, email, phoneNumber, account);
+    return newBuyer;
 }
 
-BankCustomer createBankCustomer(int id, string name, double balance)
+BankCustomer* createBankCustomer(int id, string name, double balance, std::vector<std::unique_ptr<BankCustomer>> &store)
 {
-    BankCustomer* newBankCustomer = new BankCustomer(id, name, balance);
-    return (*newBankCustomer);
+    auto bc = std::make_unique<BankCustomer>(id, name, balance);
+    BankCustomer* ptr = bc.get();
+    store.push_back(std::move(bc));
+    return ptr;
 }
 
-bool verifyBankAccount(string name)
+BankCustomer* verifyBankAccount(const string &name, const std::vector<std::unique_ptr<BankCustomer>> &store)
 {
-    return true;
+    for (const auto &p : store) {
+        if (p && p->getName() == name) return p.get();
+    }
+    return nullptr;
 }
