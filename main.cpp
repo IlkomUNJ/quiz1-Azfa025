@@ -4,6 +4,7 @@
 #include "seller.h"
 #include "buyer_menu.h"
 #include "seller_menu.h"
+#include "store_queries.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -115,48 +116,9 @@ int main() {
                 }
                 break;
             }
-                /* if Login is selected, based on authority then provide options:
-                assume user is logged in as Buyer for now
-
-
-                5. Order Functionality
-                Will display all items in cart
-                Will provide option to remove item from cart
-                Will provide option to checkout
-                After checkout invoide will be generated (will go to payment functionality)
-                6. Payment Functionality
-                Will display all listed invoices
-                Pick an invoice to pay
-                Will display invoice details and total amount
-                Will provide option to pay invoice
-                Payment is done through confirmation dialogue
-                In confirmation dialogue, will display account balance as precursor
-                User will need to manually enter invoice id to pay
-                After paying balance will be redacted from buyer and added to the responding seller account
-                After payment, order status will be changed to paid
-                7. Logout (return to main menu)
-                Display confirmation dialogue
-                If confirmed, return to main menu
-                If not, return to Buyer menu
-                8. Delete Account (remove both Buyer and Seller account and relevant banking account)
-                Display confirmation dialogue
-                If confirmed, delete account and return to main menu
-                If not, return to Buyer menu
-
-                assume user is logged in as Seller for now
-                9. Check Inventory
-                10. Add Item to Inventory
-                11. Remove Item from Inventory
-                12. View Orders (will display all orders placed to this seller
-                Only orders with paid status will be listed
-                Order details will listing items, quantity, total amount, buyer details, order status (paid, cancelled, completed)
-                extra functions
-                9. Exit to main Menu
-                10. Exit Program
-                **/
                 break;
             case REGISTER: {
-                regPrompt = CREATE_BUYER; // reset regPrompt to CREATE_BUYER when entering register menu
+                regPrompt = CREATE_BUYER; 
                 while (regPrompt != BACK){
                     cout << "Register selected. " << endl;
                     cout << "Select an option: " << endl;
@@ -173,7 +135,7 @@ int main() {
                             cout << "Punya akun bank? (y/n): ";
                             char hasBankAccount;
                             cin >> hasBankAccount;
-                            cin.ignore(); // to clear the newline character from the buffer
+                            cin.ignore(); 
 
                             if (hasBankAccount == 'n' || hasBankAccount == 'N') 
                             {
@@ -184,7 +146,7 @@ int main() {
                                 getline(cin, username);
                                 cout << "Enter Initial Deposit Amount: ";
                                 cin >> initialDeposit;
-                                cin.ignore(); // to clear the newline character from the buffer
+                                cin.ignore(); 
                                 bankAccountID++;
 
                                 BankCustomer* newBankAccount = createBankCustomer(bankAccountID, username, initialDeposit, bankAccounts);
@@ -277,7 +239,7 @@ int main() {
                                 break;
                             }
 
-                            // Withdraw initial deposit from buyer's bank account
+                            
                             if (!existingBuyer->getAccount()->withdrawBalance(initialDeposit)) {
                                 cout << "Error: Insufficient funds in your bank account!" << endl;
                                 break;
@@ -285,7 +247,7 @@ int main() {
 
                             // Create seller account
                             sellerIdCounter++;
-                            Buyer buyerCopy(*existingBuyer); // Create a copy of the buyer
+                            Buyer buyerCopy(*existingBuyer);
                             seller* newSeller = new seller(
                                 buyerCopy,
                                 sellerIdCounter,
@@ -317,24 +279,34 @@ int main() {
             case EXIT:
                 cout << "Exiting." << endl;
                 break;
-            case ADMIN_LOGIN:
-                /* Prompt for username & password then check the entries with our hard coded features */
+            case ADMIN_LOGIN: {
                 cout << "Username: ";
                 cin >> username;
                 cout << "Password: ";
                 cin >> password;
-                /** After login create a sub prompt that provides the following features
-                1. Account Management
-                    - View All Buyers, Sellers
-                    - View All details of Buyers, Sellers
-                    - Seek certain buyer of seller based on Name / account Id / address / phone number
-                    - Create new buyer/seller/Bank account
-                    - Remove buyer/seller based on ID (all related info will be deleted)
-                2. System Report
-                    - Total number of Buyers, Sellers
-                    - Total number of Banking Accounts
-                */
+                if (username == ADMIN_USERNAME && password == ADMIN_PASSWORD) {
+                    cout << "Admin authenticated.\n";
+                    bool adminRunning = true;
+                    while (adminRunning) {
+                        cout << "\nAdmin Menu:\n1. List transactions last k days\n2. List paid but not completed\n3. Top m frequent items\n4. Most active buyers (k days)\n5. Most active sellers (k days)\n6. Most popular items per month\n7. Loyal customers per month\n8. Exit Admin\nEnter choice: ";
+                        int achoice; cin >> achoice;
+                        switch (achoice) {
+                            case 1: listTransactionsLastKDays(); break;
+                            case 2: listPaidNotCompleted(); break;
+                            case 3: listMostFrequentItems(); break;
+                            case 4: listMostActiveBuyersPerDay(); break;
+                            case 5: listMostActiveSellersPerDay(); break;
+                            case 6: listMostPopularItemsPerMonth(); break;
+                            case 7: listLoyalCustomersPerMonth(); break;
+                            case 8: adminRunning = false; break;
+                            default: cout << "Invalid option." << endl; break;
+                        }
+                    }
+                } else {
+                    cout << "Admin authentication failed." << endl;
+                }
                 break;
+            }
             default:
                 cout << "Invalid option." << endl;
                 break;

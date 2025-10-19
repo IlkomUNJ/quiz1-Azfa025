@@ -92,10 +92,34 @@ void handleBuyerMenu(Buyer* buyer, UserRole& currentRole) {
                             g_cart.clear();
                             cout << "Cart cleared." << endl;
                             break;
-                        case 4: // Checkout
-                            // TODO: Implement checkout
-                            cout << "Checkout feature coming soon!" << endl;
+                        case 4: { // Checkout
+                            // Group cart items by seller and create invoices
+                            if (g_cart.isEmpty()) { cout << "Cart is empty." << endl; break; }
+                            // For simplicity, assume all items in cart go to one seller
+                            std::map<seller*, std::vector<CartItem>> sellerItems;
+                            for (const auto& ci : g_cart.getItems()) {
+                                sellerItems[ci.seller].push_back(ci);
+                            }
+                            int nextInvoiceId = g_invoices.empty() ? 1 : g_invoices.back().id + 1;
+                            time_t now = time(nullptr);
+                            char buf[20];
+                            strftime(buf, sizeof(buf), "%Y-%m-%d", localtime(&now));
+                            std::string today(buf);
+                            for (auto& pair : sellerItems) {
+                                seller* s = pair.first;
+                                std::vector<InvoiceItem> items;
+                                double total = 0;
+                                for (const auto& ci : pair.second) {
+                                    items.push_back({ci.item.getId(), ci.item.getName(), ci.quantity, ci.item.getPrice(), today});
+                                    total += ci.item.getPrice() * ci.quantity;
+                                }
+                                Invoice inv{nextInvoiceId++, buyer->getId(), s->getSellerId(), items, total, InvoiceStatus::PENDING, today};
+                                g_invoices.push_back(inv);
+                            }
+                            g_cart.clear();
+                            cout << "Checkout complete! Invoices created." << endl;
                             break;
+                        }
                     }
                 }
                 break;
@@ -121,8 +145,26 @@ void handleBuyerMenu(Buyer* buyer, UserRole& currentRole) {
                 auto &inv = *invPtr;
                 cout << "Invoice " << inv.id << " details:" << endl;
                 for (const auto &ii : inv.items) cout << " - " << ii.itemName << " x" << ii.quantity << " @ $" << ii.unitPrice << " => $" << ii.totalPrice() << endl;
-                cout << "Total: $" << inv.totalAmount << " | Status: " << (inv.status==InvoiceStatus::PAID?"PAID":"PENDING") << endl;
-                if (inv.status == InvoiceStatus::PAID) { break; }
+                cout << "Total: $" << inv.totalAmount << " | Status: ";
+                if (inv.status == InvoiceStatus::PAID) cout << "PAID";
+                else if (inv.status == InvoiceStatus::COMPLETE) cout << "COMPLETE";
+                else if (inv.status == InvoiceStatus::CANCELLED) cout << "CANCELLED";
+                else cout << "PENDING";
+                cout << " | Date: " << inv.date << endl;
+                if (inv.status == InvoiceStatus::PAID) {
+                    cout << "Mark this order as COMPLETE? (y/n): "; char compc; cin >> compc;
+                    if (compc == 'y' || compc == 'Y') {
+                        time_t nowc = time(nullptr);
+                        char cb[20];
+                        strftime(cb, sizeof(cb), "%Y-%m-%d", localtime(&nowc));
+                        inv.status = InvoiceStatus::COMPLETE;
+                        inv.completionDate = std::string(cb);
+                        cout << "Order marked as COMPLETE (" << inv.completionDate << ")." << endl;
+                    }
+                    break;
+                }
+                if (inv.status == InvoiceStatus::COMPLETE) { cout << "Order already completed." << endl; break; }
+                if (inv.status == InvoiceStatus::CANCELLED) { cout << "Order was cancelled." << endl; break; }
                 cout << "Pay this invoice now? (y/n): "; char payc; cin >> payc;
                 if (payc != 'y' && payc != 'Y') break;
                 if (!buyer->getAccount()) { cout << "You need a bank account to pay." << endl; break; }
@@ -139,7 +181,11 @@ void handleBuyerMenu(Buyer* buyer, UserRole& currentRole) {
                     }
                 }
                 inv.status = InvoiceStatus::PAID;
-                cout << "Payment successful. Invoice marked PAID." << endl;
+                time_t payt = time(nullptr);
+                char pbuf[20];
+                strftime(pbuf, sizeof(pbuf), "%Y-%m-%d", localtime(&payt));
+                inv.paymentDate = std::string(pbuf);
+                cout << "Payment successful. Invoice marked PAID (" << inv.paymentDate << ")." << endl;
                 break;
             }
 
